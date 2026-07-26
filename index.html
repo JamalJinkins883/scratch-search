@@ -1252,11 +1252,7 @@
     
         /* --- PROXY ROUTER HELPER --- */
         function getProxyUrl(targetUrl) {
-            // Routes through Cloudflare Pages function backend
-            if (window.location.hostname.includes('pages.dev') || window.location.hostname.includes('workers.dev') || window.location.hostname !== 'localhost') {
-                return `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
-            }
-            return targetUrl;
+            return `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
         }
     
         /* --- THEME TOGGLE LOGIC --- */
@@ -1342,15 +1338,18 @@
     
         /* --- FORMATTING UTILITY --- */
         function formatNum(num) {
+            if (!num || isNaN(num)) return '0';
             if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
             if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-            return num ? num.toLocaleString() : '0';
+            return num.toLocaleString();
         }
     
         /* --- HEATMAP MATRIX GENERATOR --- */
         function buildHeatmap() {
             const grid = document.getElementById('heatmapGrid');
             const monthsContainer = document.getElementById('heatmapMonths');
+            if (!grid || !monthsContainer) return;
+            
             grid.innerHTML = '';
             monthsContainer.innerHTML = '';
     
@@ -1436,11 +1435,14 @@
             });
         }
     
-        document.getElementById('projectSort').addEventListener('change', (e) => {
-            const key = e.target.value;
-            currentProjects.sort((a, b) => b[key] - a[key]);
-            renderProjects(currentProjects);
-        });
+        const sortSelect = document.getElementById('projectSort');
+        if (sortSelect) {
+            sortSelect.addEventListener('change', (e) => {
+                const key = e.target.value;
+                currentProjects.sort((a, b) => (b[key] || 0) - (a[key] || 0));
+                renderProjects(currentProjects);
+            });
+        }
     
         function openInspector(project) {
             document.getElementById('modalProjectTitle').innerText = project.title;
@@ -1458,7 +1460,7 @@
             document.getElementById('projectModal').classList.remove('active');
         }
     
-        /* --- FETCH USER METRICS --- */
+        /* --- FETCH USER METRICS (VIA SCRATCHDB + FALLBACK) --- */
         async function loadUserMetrics(username) {
             activeUsername = username;
             
@@ -1471,65 +1473,98 @@
             btnMetrics.classList.add('active');
     
             try {
-                // Fetch User Info via Proxy
-                const userRes = await fetch(getProxyUrl(`https://api.scratch.mit.edu/users/${username}`));
-                if (!userRes.ok) throw new Error('Scratcher account not found');
-                const userData = await userRes.json();
+                // 1. Fetch User Info via ScratchDB
+                const dbUserRes = await fetch(getProxyUrl(`https://scratchdb.lefty.one/v3/user/info/${username}`));
+                let userData = null;
+    
+                if (dbUserRes.ok) {
+                    userData = await dbUserRes.json();
+                } else {
+                    // Fallback to official API
+                    const officialRes = await fetch(getProxyUrl(`https://api.scratch.mit.edu/users/${username}`));
+                    if (!officialRes.ok) throw new Error('User not found');
+                    const raw = await officialRes.json();
+                    userData = {
+                        username: raw.username,
+                        bio: raw.profile ? raw.profile.bio : '',
+                        country: raw.profile ? raw.profile.country : 'Global',
+                        joined: raw.history ? raw.history.joined : '',
+                        statistics: { followers: 0, views: 0, loves: 0, favorites: 0 }
+                    };
+                }
     
                 document.getElementById('userName').innerText = userData.username;
-                document.getElementById('userBio').innerText = userData.profile.bio || "No bio provided.";
-                document.getElementById('country').innerText = userData.profile.country || "Global";
-                document.getElementById('userAvatar').src = userData.profile.images['90x90'] || `https://uploads.scratch.mit.edu/get_image/user/${userData.id}_100x100.png`;
-                document.getElementById('joinDate').innerText = `Joined ${new Date(userData.history.joined).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`;
+                document.getElementById('userBio').innerText = userData.bio || userData.status || "No bio provided.";
+                document.getElementById('country').innerText = userData.country || "Global";
+                document.getElementById('userAvatar').src = `https://uploads.scratch.mit.edu/get_image/user/${userData.id || 0}_100x100.png`;
+                if (userData.joined) {
+                    document.getElementById('joinDate').innerText = `Joined ${new Date(userData.joined).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`;
+                }
     
-                // Fetch User Projects via Proxy
-                const projectsRes = await fetch(getProxyUrl(`https://api.scratch.mit.edu/users/${username}/projects`));
-                if (projectsRes.ok) {
-                    const projectsData = await projectsRes.json();
-                    
-                    let totalViews = 0, totalLoves = 0, totalFaves = 0, totalRemixes = 0;
+                if (userData.statistics) {
+                    document.getElementById('followerCount').innerText = formatNum(userData.statistics.followers || 0);
+                    document.getElementById('totalViews').innerText = formatNum(userData.statistics.views || 0);
+                    document.getElementById('totalLoves').innerText = formatNum(userData.statistics.loves || 0);
+                    document.getElementById('totalFaves').innerText = formatNum(userData.statistics.favorites || 0);
+                }
     
-                    currentProjects = projectsData.map(p => {
-                        const views = p.stats ? p.stats.views : 0;
-                        const loves = p.stats ? p.stats.loves : 0;
-                        const favorites = p.stats ? p.stats.favorites : 0;
-                        const remixes = p.stats ? p.stats.remixes : 0;
+                // 2. Fetch User Projects via ScratchDB
+                const dbProjectsRes = await fetch(getProxyUrl(`https://scratchdb.lefty.one/v3/project/info/user/${username}`));
+                if (dbProjectsRes.ok) {
+                    const projectsData = await dbProjectsRes.json();
+                    let totalRemixes = 0;
     
-                        totalViews += views;
-                        totalLoves += loves;
-                        totalFaves += favorites;
+                    currentProjects = (Array.isArray(projectsData) ? projectsData : []).map(p => {
+                        const views = p.views || 0;
+                        const loves = p.loves || 0;
+                        const favorites = p.favorites || 0;
+                        const remixes = p.remixes || 0;
+    
                         totalRemixes += remixes;
     
                         return {
                             id: p.id,
-                            title: p.title,
+                            title: p.title || `Project #${p.id}`,
                             views: views,
                             loves: loves,
                             favorites: favorites,
                             remixes: remixes,
-                            img: p.image || `https://cdn2.scratch.mit.edu/get_image/project/${p.id}_282x210.png`
+                            img: `https://cdn2.scratch.mit.edu/get_image/project/${p.id}_282x210.png`
                         };
                     });
     
                     currentProjects.sort((a, b) => b.views - a.views);
                     renderProjects(currentProjects);
     
-                    document.getElementById('projectCount').innerText = projectsData.length;
-                    document.getElementById('totalViews').innerText = formatNum(totalViews);
-                    document.getElementById('totalLoves').innerText = formatNum(totalLoves);
-                    document.getElementById('totalFaves').innerText = formatNum(totalFaves);
+                    document.getElementById('projectCount').innerText = currentProjects.length;
                     document.getElementById('totalRemixes').innerText = formatNum(totalRemixes);
     
-                    const avg = projectsData.length ? Math.round(totalViews / projectsData.length) : 0;
+                    const totalV = userData.statistics ? (userData.statistics.views || 0) : 0;
+                    const avg = currentProjects.length ? Math.round(totalV / currentProjects.length) : 0;
                     document.getElementById('avgViews').innerText = formatNum(avg);
+                } else {
+                    // Fallback to Scratch official projects listing
+                    const offProjectsRes = await fetch(getProxyUrl(`https://api.scratch.mit.edu/users/${username}/projects`));
+                    if (offProjectsRes.ok) {
+                        const pList = await offProjectsRes.json();
+                        currentProjects = pList.map(p => ({
+                            id: p.id,
+                            title: p.title,
+                            views: p.stats ? p.stats.views : 0,
+                            loves: p.stats ? p.stats.loves : 0,
+                            favorites: p.stats ? p.stats.favorites : 0,
+                            remixes: p.stats ? p.stats.remixes : 0,
+                            img: p.image || `https://cdn2.scratch.mit.edu/get_image/project/${p.id}_282x210.png`
+                        }));
+                        renderProjects(currentProjects);
+                        document.getElementById('projectCount').innerText = currentProjects.length;
+                    }
                 }
     
-                document.getElementById('followerCount').innerText = formatNum(Math.floor(Math.random() * 50000) + 1200);
-    
             } catch (err) {
-                console.warn("Scratch API Error: ", err);
-                document.getElementById('userBio').innerText = "Could not reach Scratch API or user does not exist.";
-                document.getElementById('projectsGrid').innerHTML = `<div class="loading-box"><i class="fa-solid fa-circle-exclamation"></i><br>User "${username}" was not found.</div>`;
+                console.warn("Metrics Load Error: ", err);
+                document.getElementById('userBio').innerText = "Unable to fetch data for this Scratch account.";
+                document.getElementById('projectsGrid').innerHTML = `<div class="loading-box"><i class="fa-solid fa-circle-exclamation"></i><br>User "${username}" was not found or has no public data.</div>`;
             }
     
             loadUserStudios(username);
@@ -1557,13 +1592,13 @@
                         card.className = 'flat-card studio-card';
                         card.innerHTML = `
                             <div class="studio-header">
-                                <img src="${s.image}" class="studio-avatar" alt="Studio" onerror="this.src='https://cdn2.scratch.mit.edu/get_image/gallery/31339890_170x100.png'">
+                                <img src="${s.image}" class="studio-avatar" alt="Studio" onerror="this.src='https://cdn2.scratch.mit.edu/get_image/gallery/${s.id}_170x100.png'">
                                 <div>
                                     <h4 style="font-size: 0.9rem; font-weight: 600;">${s.title}</h4>
                                     <p style="font-size: 0.75rem; color: var(--text-muted);">Curated by @${username}</p>
                                 </div>
                             </div>
-                            <a href="https://scratch.mit.edu/studios/${s.id}/" target="_blank" class="search-btn" style="text-decoration: none; text-align: center; justify-content: center; margin-top: 6px;">
+                            <a href="https://scratch.mit.edu/studios/${s.id}/" target="_blank" class="search-btn" style="text-decoration: none; text-align: center; justify-content: center; margin-top: 10px;">
                                 View Studio
                             </a>
                         `;
@@ -1609,7 +1644,7 @@
                     if (category === 'studios') {
                         card.innerHTML = `
                             <div class="card-thumb">
-                                <img src="${item.image}" alt="${item.title}">
+                                <img src="${item.image}" alt="${item.title}" onerror="this.src='https://cdn2.scratch.mit.edu/get_image/gallery/${item.id}_170x100.png'">
                             </div>
                             <div class="card-content">
                                 <h4 style="font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.title}</h4>
@@ -1624,7 +1659,7 @@
                             loves: item.stats ? item.stats.loves : 0,
                             favorites: item.stats ? item.stats.favorites : 0,
                             remixes: item.stats ? item.stats.remixes : 0,
-                            img: item.image
+                            img: item.image || `https://cdn2.scratch.mit.edu/get_image/project/${item.id}_282x210.png`
                         });
     
                         card.innerHTML = `
@@ -1667,9 +1702,13 @@
         document.getElementById('searchInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') triggerUniversalSearch();
         });
-        document.getElementById('heroSearchInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') triggerHeroSearch();
-        });
+    
+        const heroInput = document.getElementById('heroSearchInput');
+        if (heroInput) {
+            heroInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') triggerHeroSearch();
+            });
+        }
     
         // App starts directly on Home View Screen
         showHomeView();
