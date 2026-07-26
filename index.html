@@ -1249,7 +1249,16 @@
         /* --- STATE MANAGEMENT --- */
         let currentProjects = [];
         let activeUsername = '';
-
+    
+        /* --- PROXY ROUTER HELPER --- */
+        function getProxyUrl(targetUrl) {
+            // Routes through Cloudflare Pages function backend
+            if (window.location.hostname.includes('pages.dev') || window.location.hostname.includes('workers.dev') || window.location.hostname !== 'localhost') {
+                return `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+            }
+            return targetUrl;
+        }
+    
         /* --- THEME TOGGLE LOGIC --- */
         function toggleTheme() {
             const currentTheme = document.documentElement.getAttribute('data-theme');
@@ -1258,20 +1267,20 @@
             localStorage.setItem('theme', newTheme);
             updateThemeIcon(newTheme);
         }
-
+    
         function updateThemeIcon(theme) {
             const icon = document.getElementById('themeIcon');
             if (icon) {
                 icon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
             }
         }
-
+    
         (function initTheme() {
             const savedTheme = localStorage.getItem('theme') || 'light';
             document.documentElement.setAttribute('data-theme', savedTheme);
             updateThemeIcon(savedTheme);
         })();
-
+    
         /* --- VIEW SWITCHER NAVIGATION --- */
         const homeSection = document.getElementById('homeViewSection');
         const metricsSection = document.getElementById('metricsViewSection');
@@ -1282,7 +1291,7 @@
         const btnMetrics = document.getElementById('btnMetricsView');
         const btnStudio = document.getElementById('btnStudioView');
         const btnGlobal = document.getElementById('btnGlobalView');
-
+    
         function hideAllViews() {
             homeSection.style.display = 'none';
             metricsSection.style.display = 'none';
@@ -1294,15 +1303,15 @@
             btnStudio.classList.remove('active');
             btnGlobal.classList.remove('active');
         }
-
+    
         function showHomeView() {
             hideAllViews();
             homeSection.style.display = 'block';
             btnHome.classList.add('active');
         }
-
+    
         btnHome.addEventListener('click', showHomeView);
-
+    
         btnMetrics.addEventListener('click', () => {
             if(!activeUsername) {
                 loadUserMetrics('griffpatch');
@@ -1312,7 +1321,7 @@
                 btnMetrics.classList.add('active');
             }
         });
-
+    
         btnStudio.addEventListener('click', () => {
             hideAllViews();
             studioSection.style.display = 'block';
@@ -1321,7 +1330,7 @@
                 loadUserStudios(activeUsername);
             }
         });
-
+    
         btnGlobal.addEventListener('click', () => {
             hideAllViews();
             globalSearchSection.style.display = 'block';
@@ -1330,33 +1339,33 @@
                 executeGlobalSearch('griffpatch', 'projects');
             }
         });
-
+    
         /* --- FORMATTING UTILITY --- */
         function formatNum(num) {
             if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
             if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
             return num ? num.toLocaleString() : '0';
         }
-
+    
         /* --- HEATMAP MATRIX GENERATOR --- */
         function buildHeatmap() {
             const grid = document.getElementById('heatmapGrid');
             const monthsContainer = document.getElementById('heatmapMonths');
             grid.innerHTML = '';
             monthsContainer.innerHTML = '';
-
+    
             const today = new Date();
             const startDate = new Date(today);
             startDate.setDate(today.getDate() - 363);
             startDate.setDate(startDate.getDate() - startDate.getDay());
-
+    
             let currentMonth = -1;
             const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
+    
             for (let week = 0; week < 52; week++) {
                 const sundayOfColumn = new Date(startDate);
                 sundayOfColumn.setDate(startDate.getDate() + (week * 7));
-
+    
                 if (sundayOfColumn.getMonth() !== currentMonth) {
                     currentMonth = sundayOfColumn.getMonth();
                     const monthSpan = document.createElement('span');
@@ -1365,47 +1374,47 @@
                     monthSpan.style.left = `${week * 15}px`;
                     monthsContainer.appendChild(monthSpan);
                 }
-
+    
                 for (let day = 0; day < 7; day++) {
                     const cellDate = new Date(startDate);
                     cellDate.setDate(startDate.getDate() + (week * 7) + day);
-
+    
                     const cell = document.createElement('div');
                     cell.className = 'heatmap-cell';
-
+    
                     if (cellDate > today) {
                         cell.style.visibility = 'hidden';
                         grid.appendChild(cell);
                         continue;
                     }
-
+    
                     const rand = Math.random();
                     let count = 0;
                     if (rand > 0.85) { count = Math.floor(Math.random() * 8) + 12; cell.classList.add('lvl-4'); }
                     else if (rand > 0.65) { count = Math.floor(Math.random() * 4) + 8; cell.classList.add('lvl-3'); }
                     else if (rand > 0.45) { count = Math.floor(Math.random() * 4) + 4; cell.classList.add('lvl-2'); }
                     else if (rand > 0.3) { count = Math.floor(Math.random() * 3) + 1; cell.classList.add('lvl-1'); }
-
+    
                     const dateStr = cellDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                     const activityText = count === 0 ? `No activity on ${dateStr}` : `${count} contribution${count > 1 ? 's' : ''} on ${dateStr}`;
-
+    
                     cell.setAttribute('title', activityText);
                     grid.appendChild(cell);
                 }
             }
         }
         buildHeatmap();
-
+    
         /* --- PROJECT LISTING & MODAL --- */
         function renderProjects(projectsList) {
             const grid = document.getElementById('projectsGrid');
             grid.innerHTML = '';
-
+    
             if (!projectsList || projectsList.length === 0) {
                 grid.innerHTML = `<div class="loading-box"><i class="fa-solid fa-folder-open"></i><br>No projects found.</div>`;
                 return;
             }
-
+    
             projectsList.forEach(p => {
                 const card = document.createElement('div');
                 card.className = 'project-card';
@@ -1426,13 +1435,13 @@
                 grid.appendChild(card);
             });
         }
-
+    
         document.getElementById('projectSort').addEventListener('change', (e) => {
             const key = e.target.value;
             currentProjects.sort((a, b) => b[key] - a[key]);
             renderProjects(currentProjects);
         });
-
+    
         function openInspector(project) {
             document.getElementById('modalProjectTitle').innerText = project.title;
             document.getElementById('modalProjectAuthor').innerText = `by ${activeUsername || 'Scratcher'}`;
@@ -1444,17 +1453,11 @@
             document.getElementById('modalScratchLink').href = `https://scratch.mit.edu/projects/${project.id}/`;
             document.getElementById('projectModal').classList.add('active');
         }
-
+    
         function closeInspector() {
             document.getElementById('projectModal').classList.remove('active');
         }
-
-        /* --- API ENDPOINT PROXY ROUTER --- */
-        // Automatically detects if running on Cloudflare Pages or local file
-        const API_BASE = window.location.hostname.includes('pages.dev') || window.location.hostname.includes('workers.dev')
-            ? '/api/proxy?url=' 
-            : 'https://api.scratch.mit.edu/';
-
+    
         /* --- FETCH USER METRICS --- */
         async function loadUserMetrics(username) {
             activeUsername = username;
@@ -1462,41 +1465,41 @@
             document.getElementById('userName').innerText = username;
             document.getElementById('userBio').innerText = "Fetching live Scratch data...";
             document.getElementById('projectsGrid').innerHTML = `<div class="loading-box"><i class="fa-solid fa-spinner fa-spin"></i><br>Fetching creator projects...</div>`;
-
+    
             hideAllViews();
             metricsSection.style.display = 'grid';
             btnMetrics.classList.add('active');
-
+    
             try {
-                // Fetch User Info
-                const userRes = await fetch(`https://api.scratch.mit.edu/users/${username}`);
+                // Fetch User Info via Proxy
+                const userRes = await fetch(getProxyUrl(`https://api.scratch.mit.edu/users/${username}`));
                 if (!userRes.ok) throw new Error('Scratcher account not found');
                 const userData = await userRes.json();
-
+    
                 document.getElementById('userName').innerText = userData.username;
                 document.getElementById('userBio').innerText = userData.profile.bio || "No bio provided.";
                 document.getElementById('country').innerText = userData.profile.country || "Global";
                 document.getElementById('userAvatar').src = userData.profile.images['90x90'] || `https://uploads.scratch.mit.edu/get_image/user/${userData.id}_100x100.png`;
                 document.getElementById('joinDate').innerText = `Joined ${new Date(userData.history.joined).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`;
-
-                // Fetch User Projects
-                const projectsRes = await fetch(`https://api.scratch.mit.edu/users/${username}/projects`);
+    
+                // Fetch User Projects via Proxy
+                const projectsRes = await fetch(getProxyUrl(`https://api.scratch.mit.edu/users/${username}/projects`));
                 if (projectsRes.ok) {
                     const projectsData = await projectsRes.json();
                     
                     let totalViews = 0, totalLoves = 0, totalFaves = 0, totalRemixes = 0;
-
+    
                     currentProjects = projectsData.map(p => {
                         const views = p.stats ? p.stats.views : 0;
                         const loves = p.stats ? p.stats.loves : 0;
                         const favorites = p.stats ? p.stats.favorites : 0;
                         const remixes = p.stats ? p.stats.remixes : 0;
-
+    
                         totalViews += views;
                         totalLoves += loves;
                         totalFaves += favorites;
                         totalRemixes += remixes;
-
+    
                         return {
                             id: p.id,
                             title: p.title,
@@ -1507,38 +1510,38 @@
                             img: p.image || `https://cdn2.scratch.mit.edu/get_image/project/${p.id}_282x210.png`
                         };
                     });
-
+    
                     currentProjects.sort((a, b) => b.views - a.views);
                     renderProjects(currentProjects);
-
+    
                     document.getElementById('projectCount').innerText = projectsData.length;
                     document.getElementById('totalViews').innerText = formatNum(totalViews);
                     document.getElementById('totalLoves').innerText = formatNum(totalLoves);
                     document.getElementById('totalFaves').innerText = formatNum(totalFaves);
                     document.getElementById('totalRemixes').innerText = formatNum(totalRemixes);
-
+    
                     const avg = projectsData.length ? Math.round(totalViews / projectsData.length) : 0;
                     document.getElementById('avgViews').innerText = formatNum(avg);
                 }
-
+    
                 document.getElementById('followerCount').innerText = formatNum(Math.floor(Math.random() * 50000) + 1200);
-
+    
             } catch (err) {
                 console.warn("Scratch API Error: ", err);
                 document.getElementById('userBio').innerText = "Could not reach Scratch API or user does not exist.";
                 document.getElementById('projectsGrid').innerHTML = `<div class="loading-box"><i class="fa-solid fa-circle-exclamation"></i><br>User "${username}" was not found.</div>`;
             }
-
+    
             loadUserStudios(username);
         }
-
+    
         /* --- FETCH STUDIOS --- */
         async function loadUserStudios(username) {
             const grid = document.getElementById('studioGrid');
             grid.innerHTML = `<div class="loading-box"><i class="fa-solid fa-spinner fa-spin"></i><br>Loading curated studios...</div>`;
-
+    
             try {
-                const res = await fetch(`https://api.scratch.mit.edu/users/${username}/studios/curating`);
+                const res = await fetch(getProxyUrl(`https://api.scratch.mit.edu/users/${username}/studios/curating`));
                 if (res.ok) {
                     const studios = await res.json();
                     document.getElementById('curatedCount').innerText = studios.length;
@@ -1547,7 +1550,7 @@
                         grid.innerHTML = `<div class="loading-box"><i class="fa-solid fa-folder-open"></i><br>No curated studios found for @${username}.</div>`;
                         return;
                     }
-
+    
                     grid.innerHTML = '';
                     studios.forEach(s => {
                         const card = document.createElement('div');
@@ -1571,38 +1574,38 @@
                 grid.innerHTML = `<div class="loading-box"><i class="fa-solid fa-folder-open"></i><br>Unable to fetch studio curation list.</div>`;
             }
         }
-
+    
         /* --- GLOBAL SEARCH --- */
         async function executeGlobalSearch(query, category) {
             const grid = document.getElementById('searchResultsGrid');
             const header = document.getElementById('globalSearchHeader');
             header.innerText = `Global Search Results for "${query}"`;
             grid.innerHTML = `<div class="loading-box"><i class="fa-solid fa-spinner fa-spin"></i><br>Searching Scratch network...</div>`;
-
+    
             hideAllViews();
             globalSearchSection.style.display = 'block';
             btnGlobal.classList.add('active');
-
+    
             try {
-                let endpoint = `https://api.scratch.mit.edu/search/projects?q=${encodeURIComponent(query)}`;
+                let target = `https://api.scratch.mit.edu/search/projects?q=${encodeURIComponent(query)}`;
                 if (category === 'studios') {
-                    endpoint = `https://api.scratch.mit.edu/search/studios?q=${encodeURIComponent(query)}`;
+                    target = `https://api.scratch.mit.edu/search/studios?q=${encodeURIComponent(query)}`;
                 }
-
-                const res = await fetch(endpoint);
+    
+                const res = await fetch(getProxyUrl(target));
                 if (!res.ok) throw new Error('Search failed');
                 const results = await res.json();
-
+    
                 if (!results || results.length === 0) {
                     grid.innerHTML = `<div class="loading-box"><i class="fa-solid fa-magnifying-glass"></i><br>No matching ${category} found.</div>`;
                     return;
                 }
-
+    
                 grid.innerHTML = '';
                 results.forEach(item => {
                     const card = document.createElement('div');
                     card.className = 'result-card';
-
+    
                     if (category === 'studios') {
                         card.innerHTML = `
                             <div class="card-thumb">
@@ -1623,7 +1626,7 @@
                             remixes: item.stats ? item.stats.remixes : 0,
                             img: item.image
                         });
-
+    
                         card.innerHTML = `
                             <div class="card-thumb">
                                 <img src="${item.image}" alt="${item.title}">
@@ -1636,30 +1639,30 @@
                     }
                     grid.appendChild(card);
                 });
-
+    
             } catch (err) {
                 grid.innerHTML = `<div class="loading-box"><i class="fa-solid fa-circle-exclamation"></i><br>Search request failed.</div>`;
             }
         }
-
+    
         /* --- SEARCH ROUTING HANDLERS --- */
         function triggerUniversalSearch() {
             const query = document.getElementById('searchInput').value.trim();
             const category = document.getElementById('searchCategory').value;
             if (!query) return;
-
+    
             if (category === 'user_metrics') {
                 loadUserMetrics(query);
             } else {
                 executeGlobalSearch(query, category);
             }
         }
-
+    
         function triggerHeroSearch() {
             const query = document.getElementById('heroSearchInput').value.trim();
             if (query) loadUserMetrics(query);
         }
-
+    
         document.getElementById('searchBtn').addEventListener('click', triggerUniversalSearch);
         document.getElementById('searchInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') triggerUniversalSearch();
@@ -1667,7 +1670,7 @@
         document.getElementById('heroSearchInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') triggerHeroSearch();
         });
-
+    
         // App starts directly on Home View Screen
         showHomeView();
     </script>
