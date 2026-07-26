@@ -1,69 +1,47 @@
 export async function onRequest(context) {
   const { request } = context;
-
-  // Handle browser CORS preflight OPTIONS request
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
-    });
-  }
-
   const url = new URL(request.url);
-  const targetUrl = url.searchParams.get("url");
+  const targetUrl = url.searchParams.get('url');
 
   if (!targetUrl) {
-    return new Response(JSON.stringify({ error: "Missing target URL parameter" }), {
+    return new Response(JSON.stringify({ error: 'Missing target URL parameter' }), {
       status: 400,
-      headers: { 
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      }
+      headers: { 'Content-Type': 'application/json' }
     });
   }
 
-  try {
-    const scratchResponse = await fetch(targetUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9"
-      }
-    });
+  const defaultHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*'
+  };
 
-    if (!scratchResponse.ok) {
-      return new Response(JSON.stringify({ 
-        error: `Scratch API returned status ${scratchResponse.status}` 
-      }), {
-        status: scratchResponse.status,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        }
-      });
+  try {
+    // 1. Primary Fetch Attempt
+    let response = await fetch(targetUrl, { headers: defaultHeaders });
+
+    // 2. Fallback to CORS Gateway if Scratch API blocks Cloudflare IP (403/429)
+    if (!response.ok && targetUrl.includes('api.scratch.mit.edu')) {
+      const fallbackUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+      response = await fetch(fallbackUrl, { headers: defaultHeaders });
     }
 
-    const data = await scratchResponse.arrayBuffer();
+    const data = await response.arrayBuffer();
 
     return new Response(data, {
-      status: 200,
+      status: response.status,
       headers: {
-        "Content-Type": scratchResponse.headers.get("Content-Type") || "application/json",
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "public, max-age=60"
+        'Content-Type': response.headers.get('Content-Type') || 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Cache-Control': 's-maxage=60, max-age=60'
       }
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: 'Proxy request failed', details: err.message }), {
       status: 500,
       headers: { 
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*" 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
       }
     });
   }
